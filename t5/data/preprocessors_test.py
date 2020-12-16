@@ -643,6 +643,36 @@ class PreprocessorsTest(tf.test.TestCase):
     _verify_split(100, 1)
     _verify_split(1000, 1)
 
+  def test_split_tokens_to_targets_length(self):
+    original = list(range(2, 102))
+    og_dataset = tf.data.Dataset.from_tensors({'targets': original})
+    sequence_length = {'targets': 4}
+    eos_features = {
+        'targets': Feature(
+            vocabulary=test_utils.PassThroughVocab(use_eos=True),
+            add_eos=True)
+    }
+    no_eos_features = {
+        'targets': Feature(
+            vocabulary=test_utils.PassThroughVocab(use_eos=False),
+            add_eos=False)
+    }
+
+    ds = prep.split_tokens_to_targets_length(
+        og_dataset,
+        sequence_length=sequence_length,
+        output_features=eos_features)
+    eos_outputs = list(ds.as_numpy_iterator())
+    # Outputs should be length 3 to leave room for adding EOS.
+    self.assertLen(eos_outputs[0]['targets'], 3)
+
+    ds = prep.split_tokens_to_targets_length(
+        og_dataset,
+        sequence_length=sequence_length,
+        output_features=no_eos_features)
+    no_eos_outputs = list(ds.as_numpy_iterator())
+    self.assertLen(no_eos_outputs[0]['targets'], 4)
+
   def test_trim_tokens_at_front(self):
     sequence_length = {'inputs': 4}
     inputs = tf.data.Dataset.from_tensors(

@@ -663,7 +663,7 @@ class TaskV3(DatasetProviderBase):
       sequence_length: Mapping[str, int]
     ) -> tf.data.Dataset:
     """Trim and append EOS=1 token to model features."""
-    def _trim_and_append_eos(k: str, v: tf.Tensor) -> tf.Tensor:
+    def _trim_and_append_eos(i: int, k: str, v: tf.Tensor) -> tf.Tensor:
       if k not in self.output_features:
         return v
       feat = self.output_features[k]
@@ -675,6 +675,13 @@ class TaskV3(DatasetProviderBase):
             message=f"Feature '{k}' unexpectedly contains EOS=1 token "
                     "after preprocessing.")
         if max_len:
+          # Log truncations every power of 2. Not perfect because there may
+          # be occaisonal truncations that don't occur at these intrevals,
+          # but this prevents constant log spam.
+          if tf.math.logical_and(tf.size(v) >= max_len, (i & (i - 1) == 0)):
+            tf.print("Warning: truncating", k, "with length", tf.size(v),
+                     "to add EOS at", max_len - 1,
+                     output_stream=logging.warning)
           v = tf.concat([v[:max_len-1], [1]], axis=0)
         else:
           v = tf.concat([v, [1]], axis=0)
@@ -682,8 +689,8 @@ class TaskV3(DatasetProviderBase):
         v = v[:max_len]
       return v
 
-    return dataset.map(
-        lambda ex: {k: _trim_and_append_eos(k, v) for k, v in ex.items()},
+    return dataset.enumerate().map(
+        lambda i, ex: {k: _trim_and_append_eos(i, k, v) for k, v in ex.items()},
         num_parallel_calls=tf.data.experimental.AUTOTUNE)
 
   def preprocess_precache(

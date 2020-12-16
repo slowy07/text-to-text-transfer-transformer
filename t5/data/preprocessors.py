@@ -18,7 +18,7 @@ import collections
 import functools
 import math
 import re
-from typing import Callable, Mapping, Optional, Sequence, Union
+from typing import Any, Callable, Mapping, Optional, Sequence, Union
 import uuid
 
 from absl import logging
@@ -33,6 +33,7 @@ import tensorflow.compat.v2 as tf
 AUTOTUNE = tf.data.experimental.AUTOTUNE
 
 FeatureType = Mapping[str, tf.Tensor]
+dataset_providers = Any  # dataset_providers.py imports this module.
 
 
 @utils.map_over_dataset
@@ -1973,6 +1974,8 @@ def prefix_lm(dataset, sequence_length, output_features):
 
 @gin.configurable
 def select_random_chunk(dataset: tf.data.Dataset,
+                        output_features: Optional[Mapping[
+                            str, 'dataset_providers.Feature']] = None,
                         max_length: Optional[int] = None,
                         feature_key: str = 'targets',
                         additional_feature_keys: Optional[Sequence[str]] = None,
@@ -1990,6 +1993,7 @@ def select_random_chunk(dataset: tf.data.Dataset,
 
   Args:
     dataset: A tf.data.Dataset with dictionaries containing the key feature_key.
+    output_features: Mapping of keys to features.
     max_length: Typically specified in gin configs, takes priority over
       sequence_length.
     feature_key: Which feature to use from the dataset.
@@ -2009,6 +2013,9 @@ def select_random_chunk(dataset: tf.data.Dataset,
   """
   if max_length is None and sequence_length is not None:
     max_length = sequence_length[feature_key]
+    if output_features and output_features[feature_key].add_eos:
+      # Leave room to insert an EOS token.
+      max_length -= 1
   if max_length is None:
     raise ValueError('Must specify max_length or sequence_length.')
 
@@ -2406,24 +2413,38 @@ def split_tokens(dataset: tf.data.Dataset,
 
 
 @gin.configurable
-def split_tokens_to_inputs_length(dataset, sequence_length, **kwargs):
-  return split_tokens(dataset,
-                      max_tokens_per_segment=sequence_length['inputs'],
-                      **kwargs)
+def split_tokens_to_inputs_length(dataset, sequence_length,
+                                  output_features=None, **kwargs):
+  max_tokens = sequence_length['inputs']
+  if output_features and output_features['inputs'].add_eos:
+    # Leave room to insert an EOS token.
+    max_tokens -= 1
+
+  return split_tokens(dataset, max_tokens_per_segment=max_tokens, **kwargs)
 
 
 @gin.configurable
-def split_tokens_to_targets_length(dataset, sequence_length, **kwargs):
-  return split_tokens(dataset,
-                      max_tokens_per_segment=sequence_length['targets'],
-                      **kwargs)
+def split_tokens_to_targets_length(dataset, sequence_length,
+                                   output_features=None, **kwargs):
+  max_tokens = sequence_length['targets']
+  if output_features and output_features['targets'].add_eos:
+    # Leave room to insert an EOS token.
+    max_tokens -= 1
+
+  return split_tokens(dataset, max_tokens_per_segment=max_tokens, **kwargs)
 
 
 @gin.configurable
-def split_tokens_to_random_length(dataset, sequence_length, **kwargs):
+def split_tokens_to_random_length(dataset, sequence_length,
+                                  output_features=None, **kwargs):
+  max_tokens = sequence_length['inputs']
+  if output_features and output_features['inputs'].add_eos:
+    # Leave room to insert an EOS token.
+    max_tokens -= 1
+
   return split_tokens(dataset,
                       min_tokens_per_segment=8,
-                      max_tokens_per_segment=sequence_length['inputs'],
+                      max_tokens_per_segment=max_tokens,
                       **kwargs)
 
 
